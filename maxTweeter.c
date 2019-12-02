@@ -51,14 +51,24 @@ size_t get_offset(char** cols, char *col_name, size_t num_cols) {
 // read a csv file from disk and return a list of tweets
 char** create_tweets_from_csv(char* filename, struct metadata* m) {
     FILE* fp = fopen(filename, "r");
-    char header_line[LINE_SIZE];
+    if (!fp) {
+        printf("Error: cannot open file\n");
+        exit(1);
+    }
 
     // read header line
+    char header_line[LINE_SIZE];
     fgets(header_line, LINE_SIZE, fp);
     char** header_split = split_line(header_line, m);
 
     // get name column get_offset
     m->name_offset = get_offset(header_split, "name", m->num_cols);
+
+    // check if file has more than two lines
+    if (feof(fp)) {
+        printf("Error: list empty\n");
+        exit(1);
+    }
 
     // read rest of the file
     size_t num_lines = 1;
@@ -81,9 +91,8 @@ char** create_tweets_from_csv(char* filename, struct metadata* m) {
 // split line delimited by commas into array of strings
 // TODO validate opening/closing quotes
 char** split_line(char* line, struct metadata* m) {
-    // TODO change to calloc
     // array of splitted columns to return
-    char** splitted_cols = splitted_cols = (char**) malloc(LINE_SIZE);
+    char** splitted_cols = splitted_cols = (char**) malloc(LINE_SIZE * sizeof(char*));
     for (size_t i = 0; i < LINE_SIZE; i++)
         splitted_cols[i] = (char*) malloc(LINE_SIZE);
 
@@ -130,13 +139,13 @@ int main(int argc, char** argv) {
     // read tweets from csv file
     char** tweets = create_tweets_from_csv(argv[1], &m);
 
-    size_t num_tweeters = 0; // number of unique tweeters
+    size_t i = 0, num_tweeters = 0; // number of unique tweeters
     struct map tweeters[m.num_tweets]; // map { tweeter => tweet_count }
 
     // from each tweet, create a map with key being the tweeter name
     // and value the total tweet count, append it to an array of maps
     // holding total tweet count of every tweeter
-    for (size_t i = 0; i < m.num_tweets; i++) {
+    for (i = 0; i < m.num_tweets; i++) {
         char** tweet = split_line(tweets[i], &m); // split line into array
         char* tweeter = tweet[m.name_offset]; // extract "name" column value
 
@@ -166,13 +175,14 @@ int main(int argc, char** argv) {
     // sort the array of maps by count
     qsort(tweeters, num_tweeters, sizeof(struct map), comp_map);
 
+
     // output the 10 last elements which have greatest counts
-    for (size_t i = 0; i < num_tweeters; i++) {
-        printf("%s: %ld\n", tweeters[i].key, tweeters[i].value);
+    for (i = 1; i <= num_tweeters && i <= 10; i++) {
+        printf("%s: %ld\n", tweeters[num_tweeters - i].key, tweeters[num_tweeters - i].value);
     }
 
     // free all values
-    for (size_t i = 0; i < m.num_tweets; i++) {
+    for (i = 0; i < m.num_tweets; i++) {
         free(tweets[i]);
     }
 }
