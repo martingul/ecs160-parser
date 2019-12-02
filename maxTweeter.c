@@ -1,3 +1,13 @@
+/*
+    input: csv file
+    - convert file to array of lines
+        ["h0,h1,h2,...", "a,b,c,...", ...]
+    - convert to splitted array of lines
+        []["h0", "h1", "h2", "..."], ["a", "b", "c", "..."], ...]
+    - convert to array of maps
+    - sort and print 10 elements
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,10 +27,17 @@ struct map {
 
 const size_t LINE_SIZE = 1024;
 
-int comp_map(const void* lhs, const void* rhs);
-size_t get_offset(char** cols, char *col_name, size_t num_cols);
-char** create_tweets_from_csv(char* filename, struct metadata* m);
-char** split_line(char* line, struct metadata* m);
+void error(char*);
+int comp_map(const void*, const void*);
+size_t get_offset(char**, char*, size_t);
+char** create_tweets_from_csv(char*, struct metadata*);
+char** split_line(char*, struct metadata*);
+
+// output an error and exit
+void error(char* message) {
+    printf("Error: %s\n", message);
+    exit(1);
+}
 
 // compare two maps by value
 int comp_map(const void* lhs, const void* rhs) {
@@ -51,10 +68,7 @@ size_t get_offset(char** cols, char *col_name, size_t num_cols) {
 // read a csv file from disk and return a list of tweets
 char** create_tweets_from_csv(char* filename, struct metadata* m) {
     FILE* fp = fopen(filename, "r");
-    if (!fp) {
-        printf("Error: cannot open file\n");
-        exit(1);
-    }
+    if (!fp) error("cannot open file");
 
     // read header line
     char header_line[LINE_SIZE];
@@ -64,25 +78,33 @@ char** create_tweets_from_csv(char* filename, struct metadata* m) {
     // get name column get_offset
     m->name_offset = get_offset(header_split, "name", m->num_cols);
 
+    // free header line
+    for (size_t i = 0; i < LINE_SIZE; i++) free(header_split[i]);
+    free(header_split);
+
     // check if file has more than two lines
-    if (feof(fp)) {
-        printf("Error: list empty\n");
-        exit(1);
-    }
+    if (feof(fp)) error("tweet list empty\n");
 
     // read rest of the file
     size_t num_lines = 1;
-    char* line = (char*) malloc(LINE_SIZE); // current line being read
-    char** lines = (char**) malloc(num_lines * LINE_SIZE); // array of lines, each line being a tweet
+    char line[LINE_SIZE]; // current line being read
+    char** lines = malloc(num_lines * LINE_SIZE); // array of lines, each line being a tweet
+    if (lines == NULL) error("memory allocation");
 
     // create an array of lines from file
     while (fgets(line, LINE_SIZE, fp)) {
-        lines = (char**) realloc(lines, num_lines * LINE_SIZE); // resize array of lines
-        lines[num_lines - 1] = (char*) malloc(LINE_SIZE); // allocate line
+        lines = realloc(lines, num_lines * LINE_SIZE); // resize array of lines
+        if (lines == NULL) error("memory allocation");
+
+        char* new_line = malloc(LINE_SIZE); // allocate line
+        if (new_line == NULL) error("memory allocation");
+
+        lines[num_lines - 1] = new_line;
         memcpy(lines[num_lines - 1], line, LINE_SIZE); // copy content of line into array of lines
         num_lines++;
         // TODO test if num_cols match
     }
+
     m->num_tweets = --num_lines; // set number of total tweets
 
     return lines;
@@ -92,46 +114,60 @@ char** create_tweets_from_csv(char* filename, struct metadata* m) {
 // TODO validate opening/closing quotes
 char** split_line(char* line, struct metadata* m) {
     // array of splitted columns to return
-    char** splitted_cols = splitted_cols = (char**) malloc(LINE_SIZE * sizeof(char*));
-    for (size_t i = 0; i < LINE_SIZE; i++)
-        splitted_cols[i] = (char*) malloc(LINE_SIZE);
+    char** splitted_cols = malloc(LINE_SIZE * sizeof(char*));
+    if (splitted_cols == NULL) error("memory allocation");
 
-    char* col = (char*) malloc(LINE_SIZE); // current column buffer
+    // allocate array of strings
+    for (size_t i = 0; i < LINE_SIZE; i++) {
+        char* splitted_col = malloc(LINE_SIZE);
+        if (splitted_col == NULL) error("memory allocation");
+        splitted_cols[i] = splitted_col;
+    }
+
     size_t col_i = 0, split_i = 0; // buffer indexes
+    char* col = malloc(LINE_SIZE); // current column buffer
+    if (col == NULL) error("memory allocation");
 
+    // iterate through each character of line
     for (char* c = line; *c != '\0'; c++) {
-        // iterate through each character of line
+        // load characters into col until we reach a comma
+        // then append col to array of splitted cols
         if (*c == ',') {
-            // copy current column to splitted columns array if it is a comma
+            // copy current column to splitted columns array
             memcpy(splitted_cols[split_i], col, LINE_SIZE);
             split_i++;
+
+			// TODO validate for quotes
 
             // reset the current buffer
             memset(col, 0, LINE_SIZE);
             col_i = 0;
         } else {
-            // append to current column buffer if it is not a comma
+            // append to current column buffer
             col[col_i] = *c;
             col_i++;
         }
     }
 
-    // copy column after last comma as well and trim new line
+    // copy only / last column and trim new line
     char col_trim[col_i];
     strncpy(col_trim, col, col_i - 1);
     memcpy(splitted_cols[split_i], col_trim, col_i);
 
-    // set the number of columns
-    m->num_cols = split_i + 1;
+    m->num_cols = split_i + 1; // set the number of columns
+    free(col); // free column buffer
 
     return splitted_cols;
 }
 
 int main(int argc, char** argv) {
-    // TODO handle errors, function returns, mallocs, etc.
-    // no additional commas inside the tweet text
-    // two columns with same name should result in error
-    if (argc != 2) return 1;
+    // TODO
+    // - no additional commas inside the tweet text
+    // - two columns with same name should result in error
+    if (argc != 2) {
+        printf("Usage: %s <file.csv>\n", argv[0]);
+        return 1;
+    };
 
     // csv file metadata for processing
     struct metadata m = { 0, 0, 0 };
@@ -149,40 +185,44 @@ int main(int argc, char** argv) {
         char** tweet = split_line(tweets[i], &m); // split line into array
         char* tweeter = tweet[m.name_offset]; // extract "name" column value
 
-        int is_counted = 0;
-        struct map* tweeter_map = NULL;
+        // skip if tweeter is an empty string
+        if (strlen(tweeter) > 0) {
+            int is_counted = 0;
+            struct map* tweeter_map = NULL;
 
-        // check if map is already in array
-        for (size_t j = 0; j < num_tweeters; j++) {
-            if (strncmp(tweeter, tweeters[j].key, strlen(tweeter)) == 0) {
-                tweeter_map = &tweeters[j]; // keep reference to matching map
-                is_counted = 1;
+            // check if map is already in array
+            for (size_t j = 0; j < num_tweeters; j++) {
+                if (strncmp(tweeter, tweeters[j].key, strlen(tweeter)) == 0) {
+                    tweeter_map = &tweeters[j]; // keep reference to matching map
+                    is_counted = 1;
+                }
             }
-        }
 
-        if (is_counted == 1 && tweeter_map != NULL) {
-            // if map is already in array, increase count of reference map
-            tweeter_map->value++;
-            is_counted = 0;
-        } else {
-            // otherwise insert a new map with initial count of one
-            struct map tweeter_map = { tweeter, 1 };
-            tweeters[num_tweeters] = tweeter_map;
-            num_tweeters++;
+            if (is_counted == 1 && tweeter_map != NULL) {
+                // if map is already in array, increase count of reference map
+                tweeter_map->value++;
+                is_counted = 0;
+            } else {
+                // otherwise insert a new map with initial count of one
+                struct map tweeter_map = { tweeter, 1 };
+                tweeters[num_tweeters] = tweeter_map;
+                num_tweeters++;
+            }
         }
     }
 
-    // sort the array of maps by count
+    // sort the array of maps by value of tweet count
     qsort(tweeters, num_tweeters, sizeof(struct map), comp_map);
-
 
     // output the 10 last elements which have greatest counts
     for (i = 1; i <= num_tweeters && i <= 10; i++) {
-        printf("%s: %ld\n", tweeters[num_tweeters - i].key, tweeters[num_tweeters - i].value);
+        printf("%s: %ld\n",
+            tweeters[num_tweeters - i].key,
+            tweeters[num_tweeters - i].value);
     }
 
-    // free all values
-    for (i = 0; i < m.num_tweets; i++) {
-        free(tweets[i]);
-    }
+    // free allocated memory
+    for (i = 0; i < m.num_tweets; i++) free(tweets[i]);
+    free(tweets);
+    for (i = 0; i < num_tweeters; i++) free(tweeters[i].key);
 }
