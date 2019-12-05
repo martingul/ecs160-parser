@@ -51,15 +51,27 @@ int comp_map(const void* lhs, const void* rhs) {
 
 // get row integer offset for given column name
 // e.g. id,name,text -> name returns 1
-size_t get_offset(char** cols, char *col_name, size_t num_cols) {
+size_t get_offset(char** cols, char* col_name, size_t num_cols) {
     size_t offset = 0;
+
+    // memset(col_name_quotes, 1, strlen(col_name) + 3);
+    // create a new string "col_name" (with quotes around)
+    // snprintf(col_name_quotes, strlen(col_name) + 2, "\"%s\"", col_name);
 
     // iterate through each columns to find matching name
     for (size_t i = 0; i < num_cols; i++) {
-        if (strncmp(col_name, cols[i], strlen(col_name)) == 0)
+        if (strncmp(col_name, cols[i], strlen(col_name)) == 0) {
             return offset; // return matching offset
-        else
-            offset++;
+        } else {
+            // add quotes around col_name
+            char col_name_quotes[strlen(col_name) + 3];
+            snprintf(col_name_quotes, strlen(col_name) + 3, "\"%s\"", col_name);
+
+            if (strncmp(col_name_quotes, cols[i], strlen(col_name_quotes)) == 0)
+                return offset;
+            else
+                offset++;
+        }
     }
 
     return offset;
@@ -68,7 +80,7 @@ size_t get_offset(char** cols, char *col_name, size_t num_cols) {
 // read a csv file from disk and return a list of tweets
 char** create_tweets_from_csv(char* filename, struct metadata* m) {
     FILE* fp = fopen(filename, "r");
-    if (!fp) error("cannot open file");
+    if (!fp) error("fopen");
 
     // read header line
     char header_line[LINE_SIZE];
@@ -83,50 +95,55 @@ char** create_tweets_from_csv(char* filename, struct metadata* m) {
     free(header_split);
 
     // check if file has more than two lines
-    if (feof(fp)) error("tweet list empty\n");
+    if (feof(fp)) error("feof\n");
 
     // read rest of the file
     size_t num_lines = 1;
     char line[LINE_SIZE]; // current line being read
     char** lines = malloc(num_lines * LINE_SIZE); // array of lines, each line being a tweet
-    if (lines == NULL) error("memory allocation");
+    if (lines == NULL) error("malloc");
 
     // create an array of lines from file
     while (fgets(line, LINE_SIZE, fp)) {
-        lines = realloc(lines, num_lines * LINE_SIZE); // resize array of lines
-        if (lines == NULL) error("memory allocation");
+        // resize array of lines
+        lines = realloc(lines, num_lines * LINE_SIZE);
+        if (lines == NULL) error("realloc");
 
-        char* new_line = malloc(LINE_SIZE); // allocate line
-        if (new_line == NULL) error("memory allocation");
+        // allocate line on heap
+        char* new_line = malloc(LINE_SIZE);
+        if (new_line == NULL) error("malloc");
 
+        // copy content of line into array of linesO
         lines[num_lines - 1] = new_line;
-        memcpy(lines[num_lines - 1], line, LINE_SIZE); // copy content of line into array of lines
+        memcpy(lines[num_lines - 1], line, LINE_SIZE);
+
         num_lines++;
         // TODO test if num_cols match
     }
 
+	fclose(fp); // close file
     m->num_tweets = --num_lines; // set number of total tweets
 
     return lines;
 }
 
 // split line delimited by commas into array of strings
-// TODO validate opening/closing quotes
 char** split_line(char* line, struct metadata* m) {
+    // TODO validate opening/closing quotes
     // array of splitted columns to return
     char** splitted_cols = malloc(LINE_SIZE * sizeof(char*));
-    if (splitted_cols == NULL) error("memory allocation");
+    if (splitted_cols == NULL) error("malloc");
 
     // allocate array of strings
     for (size_t i = 0; i < LINE_SIZE; i++) {
         char* splitted_col = malloc(LINE_SIZE);
-        if (splitted_col == NULL) error("memory allocation");
+        if (splitted_col == NULL) error("malloc");
         splitted_cols[i] = splitted_col;
     }
 
     size_t col_i = 0, split_i = 0; // buffer indexes
     char* col = malloc(LINE_SIZE); // current column buffer
-    if (col == NULL) error("memory allocation");
+    if (col == NULL) error("malloc");
 
     // iterate through each character of line
     for (char* c = line; *c != '\0'; c++) {
@@ -136,8 +153,6 @@ char** split_line(char* line, struct metadata* m) {
             // copy current column to splitted columns array
             memcpy(splitted_cols[split_i], col, LINE_SIZE);
             split_i++;
-
-			// TODO validate for quotes
 
             // reset the current buffer
             memset(col, 0, LINE_SIZE);
